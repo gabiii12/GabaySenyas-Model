@@ -3,10 +3,12 @@ Record sign CLIPS (sequences of frames) with both hands.
 
 Usage:
     python collect_sequences.py <sign_name> <signer_id>
-    e.g. python collect_sequences.py none gab
+    e.g. python collect_sequences.py good_morning gab
 
-Controls:
+Controls (click the camera window first):
     SPACE  start a clip, SPACE again to stop and save it
+    C      cancel the clip you are recording right now (nothing is saved)
+    U      undo: delete the last clip saved in this run (press again to go further back)
     Q      quit
 """
 import glob
@@ -26,8 +28,14 @@ MODEL_PATH = "model/hand_landmarker.task"
 
 if len(sys.argv) != 3:
     print("Usage: python collect_sequences.py <sign_name> <signer_id>")
+    print("Use underscores, no spaces. Example: python collect_sequences.py good_morning gab")
     sys.exit(1)
 SIGN, SIGNER = sys.argv[1], sys.argv[2]
+
+# Guard: the sign name must be a plain name, not a path (this caused nested folders before)
+if any(c in SIGN for c in ("\\", "/", ":")):
+    print(f"'{SIGN}' looks like a path. Give just the sign name, e.g. good_morning")
+    sys.exit(1)
 
 out_dir = os.path.join("data", "sequences", SIGN)
 os.makedirs(out_dir, exist_ok=True)
@@ -74,6 +82,7 @@ options = vision.HandLandmarkerOptions(
 
 existing = len(glob.glob(os.path.join(out_dir, f"{SIGNER}_*.npy")))
 saved = 0
+saved_paths = []  # clips saved in this run, newest last (for undo)
 recording = False
 frames, hand_seen = [], []
 cap = cv2.VideoCapture(0)
@@ -104,6 +113,8 @@ with vision.HandLandmarker.create_from_options(options) as detector:
         cv2.putText(frame, f"{SIGN} | {SIGNER} | {status} | saved: {saved}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7,
                     (0, 0, 255) if recording else (255, 255, 255), 2)
+        cv2.putText(frame, "SPACE rec/save | C cancel | U undo last | Q quit",
+                    (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
         cv2.imshow("Record sign clips", frame)
 
         key = cv2.waitKey(1) & 0xFF
@@ -114,10 +125,20 @@ with vision.HandLandmarker.create_from_options(options) as detector:
                 recording = False
                 if len(frames) >= MIN_FRAMES and np.mean(hand_seen) >= 0.6:
                     clip = resample(frames).astype("float32")
-                    np.save(os.path.join(out_dir, f"{SIGNER}_{existing + saved}.npy"), clip)
+                    path = os.path.join(out_dir, f"{SIGNER}_{existing + saved}.npy")
+                    np.save(path, clip)
+                    saved_paths.append(path)
                     saved += 1
                 else:
                     print("Clip discarded (too short or hands not visible enough).")
+        elif key == ord("c") and recording:
+            recording = False
+            frames, hand_seen = [], []
+            print("Recording cancelled.")
+        elif key == ord("u") and not recording and saved_paths:
+            os.remove(saved_paths.pop())
+            saved -= 1
+            print("Last clip deleted.")
         elif key == ord("q"):
             break
 
