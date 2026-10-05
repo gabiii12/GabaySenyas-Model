@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.MOV
+*.mov
+*.Mov
+*.mp4
+*.MP4
+*.jpg
+*.png
+Alphabet_Fsl/
+clips/
+data/
+model/hand_landmarker.task
